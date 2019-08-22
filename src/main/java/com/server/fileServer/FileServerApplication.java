@@ -11,7 +11,7 @@ import com.server.fileServer.socketNio.SocketServer;
 @SpringBootApplication
 public class FileServerApplication {
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws Exception {
 		
 		SpringApplication.run(FileServerApplication.class, args);
 		

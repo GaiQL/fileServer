@@ -13,7 +13,9 @@ import java.net.MalformedURLException;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Base64;
 import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -26,6 +28,7 @@ import java.util.zip.ZipFile;
 
 import javax.servlet.http.HttpServletRequest;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -36,6 +39,9 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.multipart.MultipartHttpServletRequest;
 
+import com.server.fileServer.envManage.switchEnv;
+import com.server.fileServer.httpAction.HttpAction;
+import com.server.fileServer.httpAction.commonApi;
 
 import jcifs.smb.SmbException;
 import jcifs.smb.SmbFile;
@@ -45,8 +51,13 @@ import jcifs.smb.SmbFileOutputStream;
 @RestController
 public class fileController {
 	
-	private static String baseUrl = "smb://apph5:apph5@39.106.200.171/app-test4/app-h5-api/banks/";
+	//  有文件但无版本号， 
 	
+	public static String baseUrl = "smb://apph5:apph5@" + switchEnv.sharedFoldersAddress + "/" + switchEnv.sharedFoldersName + "/app-h5-api/banks/";
+	
+	public static JSONObject currentBankListInfo = new JSONObject();
+	
+	//  读取远程文件；
     public static void readToBuffer(StringBuffer buffer, String filePath) throws IOException {
     	SmbFileInputStream smbfile = new SmbFileInputStream( filePath );
         String line; // 用来保存每行读取的内容
@@ -60,47 +71,81 @@ public class fileController {
         reader.close();
         smbfile.close();
     }
-	
-    @PostMapping(path = "/getH5Version")
-	public static String getH5Version(@RequestBody Map<String, String> params) throws Exception {
+    
+    //  查询后台银行列表
+    private static int bankListPage = 1;
+    private static int bankListLimit = 12;
+    public static void appListFind( int bankId,String envType ) throws IOException {
     	
-		String fileUrl = baseUrl + params.get("fileName") + "/appConfig.json";
-		
-		SmbFile smbfile = new SmbFile( fileUrl );
-		if( !smbfile.exists() ) {
-			JSONObject jsonObj = new JSONObject(); 
-			jsonObj.put("message", "远程没有文件");
-			jsonObj.put("exists", 0);
-			jsonObj.put("errCode", 1);
-			return jsonObj.toString();
-		}
-		
-        StringBuffer sb = new StringBuffer();
-        fileController.readToBuffer(sb, fileUrl);
+    	JSONObject listData = commonApi.getListDat( bankListPage,bankListLimit );
         
-        System.out.println( sb.toString() );
-        
-        return sb.toString();
+        if( (int) listData.get("code") == 0 ) {
+        	
+        	JSONArray bankList = new JSONArray( listData.get("data").toString() );
+        	
+        	if( bankList.length() == 0 ) { return; }
+        	
+        	for(int i=0; i<bankList.length(); i++) {
+        		JSONObject jsonObj = bankList.getJSONObject(i);
+        		String prepareEnvType = (String) jsonObj.get("status");
+        		int prepareOrgId = (int) jsonObj.get("orgId");
+        		if(  prepareEnvType.equals(envType) && prepareOrgId == bankId ) {
+        			currentBankListInfo = bankList.getJSONObject(i);
+        			break;
+        		}
+        	}
+        	
+        	if( !currentBankListInfo.has("version") ) { ++bankListPage;fileController.appListFind( bankId,envType ); }
+        	
+        }
         
     }
     
-	public static boolean sendApp( Object fileName ) throws Exception {
+    //  获取APP版本
+    public static void getAppVersion( int bankId,String envType ) throws IOException {
     	
-		boolean result;
-		String deleteUrl = baseUrl + fileName + '/';
-		SmbFile smbfile = new SmbFile( deleteUrl );
-		
-	    if(smbfile.exists()){
-	    	smbfile.delete();
-	    	result = true;
-	    }else {
-	    	result = false;
-	    }
-	    
-	    return result;
+    	Map<String,Object> loginData = commonApi.loginManagement();
+    	
+    	System.out.println( loginData );
+        bankListPage = 1;
+        bankListLimit = 12;
+        currentBankListInfo = new JSONObject();
+    	fileController.appListFind( bankId,envType );
         
     }
 	
+    //  获取版本；
+    @PostMapping(path = "/getVersion")
+	public static String getVersion(@RequestBody Map<String, String> params) throws Exception {
+    	
+    	int bankId = Integer.valueOf( params.get("bankId") );
+    	String envType = (String) params.get("envType");
+    	switchEnv.action(envType);
+    	
+    	
+		String fileUrl = baseUrl + bankId + "/appConfig.json";
+		
+		SmbFile smbfile = new SmbFile( fileUrl );
+		JSONObject resJson = new JSONObject(); 
+		resJson.put( "h5", new JSONObject() );
+		resJson.put( "app", new JSONObject() );
+		if( smbfile.exists() ) {
+			
+	        StringBuffer sb = new StringBuffer();
+	        fileController.readToBuffer(sb, fileUrl);
+			resJson.put( "h5", new JSONObject( sb.toString() ).get("app")  );
+			
+		}
+		
+		fileController.getAppVersion( bankId,envType );
+		resJson.put( "app", currentBankListInfo  );
+
+        System.out.println( resJson );
+        
+        return resJson.toString();
+        
+    }
+    
 	public static boolean clearFile( Object fileName ) throws Exception {
     	
 		boolean result;
@@ -116,6 +161,20 @@ public class fileController {
 	    
 	    return result;
         
+    }
+	
+    public static void createDir(Object wrapperDirName) {
+	    SmbFile smbFile;
+	    try {
+	        smbFile = new SmbFile(baseUrl + wrapperDirName);
+	        if (!smbFile.exists()) {
+	            smbFile.mkdir();
+	        }
+	    } catch (MalformedURLException e) {
+	        e.printStackTrace();
+	    } catch (SmbException e) {
+	        e.printStackTrace();
+	    }
     }
     
     @PostMapping(path = "/uploadFile")
@@ -213,23 +272,8 @@ public class fileController {
         
     }
     
-    public static void createDir(Object wrapperDirName) {
-	    SmbFile smbFile;
-	    try {
-	        smbFile = new SmbFile(baseUrl + wrapperDirName);
-	        if (!smbFile.exists()) {
-	            smbFile.mkdir();
-	        }
-	    } catch (MalformedURLException e) {
-	        e.printStackTrace();
-	    } catch (SmbException e) {
-	        e.printStackTrace();
-	    }
-    }
-    
     /**上传文件到服务器*/
-    public static void uploadFile(String name,InputStream read)
-    {
+    public static void uploadFile(String name,InputStream read){
         BufferedInputStream bf = null; 
         SmbFileOutputStream smbOut = null;
         try{
@@ -254,6 +298,48 @@ public class fileController {
                 e2.printStackTrace(); 
             }
         }
+    }
+    
+    public static ZipFile zipBase64ToFile(String base64, String fileName) {
+    	
+        File file = null;
+        String filePath = "C:\\Users\\EDZ\\AppData\\Local\\Temp";
+        String zipPath = filePath + "\\" + fileName;
+        File  dir = new File(filePath);
+        if (!dir.exists() && !dir.isDirectory()) {
+                dir.mkdirs();
+        }
+        BufferedOutputStream bos = null;
+        java.io.FileOutputStream fos = null;
+        try {
+            byte[] bytes = Base64.getDecoder().decode(base64);
+            file = new File( zipPath );
+            fos = new java.io.FileOutputStream(file);
+            bos = new BufferedOutputStream(fos);
+            bos.write(bytes);
+            
+            return new ZipFile( zipPath );
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            if (bos != null) {
+                try {
+                    bos.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+            if (fos != null) {
+                try {
+                    fos.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+		return null;
+        
     }
     
 }

@@ -1,0 +1,24 @@
+{
+    "dev": {
+        "sharedFoldersAddress": "47.94.80.115",
+        "sharedFoldersName": "dev-openapi"
+    },
+    "test1": {
+        "sharedFoldersAddress": "47.95.247.80",
+        "sharedFoldersName": "app-test1"
+    },
+    "test2": {
+        "sharedFoldersAddress": "39¡£105.124.40",
+        "sharedFoldersName": "app-test2"
+    },
+    "test3": {
+        "sharedFoldersAddress": "39.105.126.1",
+        "sharedFoldersName": "app-test3"
+    },
+    "test4": {
+        "sharedFoldersAddress": "39.105.28.240",
+        "sharedFoldersName": "app-test4"
+    },
+    "zipDir":""
+}
+  
