@@ -11,31 +11,40 @@ import org.springframework.util.ResourceUtils;
 import com.server.fileServer.controller.fileController;
 
 public class switchEnv {
+
+	public static String getTelefileBaseUrl( String envType ) throws IOException {
+		
+		String posteriorUrl = "/app-h5-api/banks/";
+		
+		if( envType.equals( "preheat" ) ) { posteriorUrl = "/banks/"; }
+		
+		return "smb://apph5:apph5@" + readUlServerConfig(envType).get("sharedFoldersAddress") + "/" + readUlServerConfig(envType).get("sharedFoldersName") + posteriorUrl; 
+		
+	}
 	
-	public static String sharedFoldersAddress = "39.106.200.171/";
+	public static String getManagementAddress( String envType ) throws IOException {
+		
+		return (String) readUlServerConfig(envType).get("managementAddress");
+		
+	}
 	
-	public static String sharedFoldersName = "app-test4";
-	
-	public static void action( String envType ) throws IOException {
-    	
-        StringBuffer ulServerConfig = new StringBuffer();
+	public static JSONObject readUlServerConfig( String envType ) throws IOException {
+		
+		StringBuffer ulServerConfig = new StringBuffer();
         
         readToBuffer( ulServerConfig, "classpath:ulServerConfig.json" );
         
         JSONObject currentEnv = (JSONObject) new JSONObject( ulServerConfig.toString() ).get( envType );
-        
-    	sharedFoldersAddress = (String) currentEnv.get("sharedFoldersAddress");
     	
-    	sharedFoldersName = (String) currentEnv.get("sharedFoldersName");
-    	
-    	fileController.baseUrl = "smb://apph5:apph5@" + sharedFoldersAddress + "/" + sharedFoldersName + "/app-h5-api/banks/";
-        
-    }
+    	return currentEnv;
+		
+	}
 
     public static void readToBuffer(StringBuffer buffer, String filePath) throws IOException {
+    	
     	String filestr =  ResourceUtils.getFile("classpath:jsonDir/ulServerConfig.json").getPath();
     	FileInputStream smbfile = new FileInputStream( filestr );
-        String line; // 用来保存每行读取的内容
+        String line;
         BufferedReader reader = new BufferedReader(new InputStreamReader(smbfile));
         line = reader.readLine();
         while (line != null) {
@@ -45,6 +54,7 @@ public class switchEnv {
         }
         reader.close();
         smbfile.close();
+        
     }
 	
 }

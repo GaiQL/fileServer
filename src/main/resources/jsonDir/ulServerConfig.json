@@ -1,24 +1,33 @@
 {
     "dev": {
         "sharedFoldersAddress": "47.94.80.115",
-        "sharedFoldersName": "dev-openapi"
+        "sharedFoldersName": "dev-openapi",
+        "managementAddress":"https://openapi-centretest5.bicai365.com"
     },
     "test1": {
         "sharedFoldersAddress": "47.95.247.80",
-        "sharedFoldersName": "app-test1"
+        "sharedFoldersName": "app-test1",
+        "managementAddress":"https://openapi-centretest4.bicai365.com"
     },
     "test2": {
         "sharedFoldersAddress": "39¡£105.124.40",
-        "sharedFoldersName": "app-test2"
+        "sharedFoldersName": "app-test2",
+        "managementAddress":"https://openapi-centretest4.bicai365.com"
     },
     "test3": {
         "sharedFoldersAddress": "39.105.126.1",
-        "sharedFoldersName": "app-test3"
+        "sharedFoldersName": "app-test3",
+        "managementAddress":"https://openapi-centretest4.bicai365.com"
     },
     "test4": {
         "sharedFoldersAddress": "39.105.28.240",
-        "sharedFoldersName": "app-test4"
+        "sharedFoldersName": "app-test4",
+        "managementAddress":"https://openapi-centretest4.bicai365.com"
     },
-    "zipDir":""
+    "preheat": {
+        "sharedFoldersAddress": "39.107.64.211",
+        "sharedFoldersName": "graytest-openapi",
+        "managementAddress":"https://bankcentremgr.bicai365.com"
+    }
 }
   

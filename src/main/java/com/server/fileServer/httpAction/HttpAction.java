@@ -40,13 +40,11 @@ import com.server.fileServer.envManage.switchEnv;
 
 public class HttpAction {
 	
-	private static String baseUrl = "https://openapi-centretest4.bicai365.com";
-	
 	static String cookieStr = "";
 	
 	static JSONObject cookieJson = new JSONObject();
 	
-    public static Map<String,Object> uploadFileByHTTP(String postUrl,Map<String,String> postParam) throws IOException{
+    public static Map<String,Object> uploadFileByHTTP(String envType,String postUrl,Map<String,String> postParam) throws IOException{
     	
         Logger log = LoggerFactory.getLogger(HttpAction.class);
 
@@ -58,7 +56,7 @@ public class HttpAction {
         
         try{
             //把一个普通参数和文件上传给下面这个地址    是一个servlet
-            HttpPost httpPost = new HttpPost( baseUrl + postUrl );
+            HttpPost httpPost = new HttpPost( switchEnv.getManagementAddress(envType) + postUrl );
             
             httpPost.setHeader("Cookie",cookieStr);
 //          Content-Type: application/x-www-form-urlencoded; charset=UTF-8
@@ -130,7 +128,7 @@ public class HttpAction {
     }
     
     
-	public static JSONObject httpGet( String getUrl ) throws IOException {
+	public static JSONObject httpGet( String envType,String getUrl ) throws IOException {
 		
 		// 获得Http客户端(可以理解为:你得先有一个浏览器;注意:实际上HttpClient与浏览器是不一样的)
 		CloseableHttpClient httpClient = HttpClientBuilder.create().build();
@@ -138,7 +136,7 @@ public class HttpAction {
 		JSONObject resultJson = null;
  
 		// 创建Get请求
-		HttpGet httpGet = new HttpGet( baseUrl + getUrl );
+		HttpGet httpGet = new HttpGet( switchEnv.getManagementAddress(envType) + getUrl );
 		// 响应模型
 		httpGet.setHeader("Cookie",cookieStr);
 		CloseableHttpResponse response = null;

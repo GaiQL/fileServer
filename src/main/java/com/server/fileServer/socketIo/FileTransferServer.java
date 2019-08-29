@@ -15,6 +15,7 @@ import java.net.Socket;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -30,6 +31,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -45,8 +47,8 @@ public class FileTransferServer {
 
     private int port = 9999;
     private ServerSocket serverSocket;
-    private static String fileName="D:\\[The King's Avatar][09].mp4";
-
+    private  Map<String, Socket> socketMap = new HashMap<String, Socket>();
+    		 
     public FileTransferServer() throws IOException {
         serverSocket = new ServerSocket(port);
         System.out.println("服务器已经启动，，，，，，");
@@ -73,103 +75,150 @@ public class FileTransferServer {
     
     public void receieveFile() throws Exception  {
     	
-        while (true) {
-        	
-        	Socket socket = null;
-            try {
-            	
-                socket = serverSocket.accept();
-                OutputStream out = socket.getOutputStream();
-                sendMessage( out , "建立连接成功" );                
 
-                BufferedReader reader = getReader(socket);
-                JSONObject reqData = new JSONObject( reader.readLine() );
-                
-                Object type = reqData.get("type");
-                Object wrapperDirName = reqData.get("name");
-                switchEnv.action( (String) reqData.get("envType") );
- 
-                if( type.equals("fileInfo") ) {
-                	
-                	ZipFile zipFile = fileController.zipBase64ToFile( (String) reqData.get("fileContent"), reqData.get("name") + ".zip" );
-                	
-                	if( zipFile == null ) {
-                		sendMessage( out , "失败，zip文件为空" );
-                		out.close();
-                		socket.close();
-                	}
-                    
-                    Map<String,Object> loginData = commonApi.loginManagement();
-                    
-                    try {
-                    	Object errData = new JSONObject( loginData.get("data").toString() ).get("userSession");
-                    	sendMessage( out , "登录后台成功，开始准备上传app" );
-                    }catch( Exception e ) {
-				    	sendMessage( out , "登录后台失败" );
-				    	out.close();
-					  	socket.close();
-                    }
-                  	
-                    Map<String,Object> releaseAppData = commonApi.releaseApp( "C:\\Users\\EDZ\\AppData\\Local\\Temp\\" + reqData.get("name") + ".zip" ,reqData );
-                    sendMessage( out , "app发版成功，列表id-" + fileController.currentBankListInfo.get("id").toString() );
-                    
-            			
-        			sendMessage( out , "开始清理远程文件夹中的打包文件..." );
-        			if( fileController.clearFile( wrapperDirName ) ) {
-        				sendMessage( out , "远程文件已删除，开始准备上传" );
-        			}else {
-        				sendMessage( out , "远程没有此项目打包文件，开始准备上传" );
-        			}
-    					
-        			@SuppressWarnings("unchecked")
-                    Enumeration<ZipEntry> enu = (Enumeration<ZipEntry>) zipFile.entries(); 
-                    int fil = 0;
-                    int dir = 0;
-                    
-                    fileController.createDir( wrapperDirName );
-                    
-                    while ( enu.hasMoreElements() ) {
+    	Socket socket = null;
+    	OutputStream out = null;
+
+            while (true) {
+                try {
                     	
-                        ZipEntry zipElement = (ZipEntry) enu.nextElement();  
-                        InputStream read = zipFile.getInputStream(zipElement);  
-                        String fileName = zipElement.getName();  
-                        if (fileName != null && fileName.indexOf(".") != -1) {// 是否为文件 
-                        	fileController.uploadFile( fileName,read );
-                        	++fil;
-                        	sendMessage( out ,Integer.toString(fil) , "upload" );
-                        }else {
-                        	fileController.createDir( fileName );
-                        	++dir;
-                        }
-                        BufferedInputStream bf = null;
-                        bf = new BufferedInputStream( read );
-
-                    }
+                    socket = serverSocket.accept();
                     
-                    sendMessage( out , "H5发版成功" );
+                	String envType = null;
+                	String bankId = null;
+                	JSONObject currentBankListInfo = null;
+                	Map<String, String> buildInfo = new HashMap<String, String>();
                 	
+                    out = socket.getOutputStream();
+                    sendMessage( out , "建立连接成功" );
+                    BufferedReader reader = getReader(socket);
+                    
+                    while (true) {
+                    	
+                    	try {
+                    		
+                    		JSONObject reqData = new JSONObject( reader.readLine() );
+                            
+                            Object type = reqData.get("type");        
+                            
+                            if( type.equals("initialize") ) {
+                            
+                            	envType = (String) reqData.get("envType");
+                            	bankId = (String) reqData.get("bankId");
+
+                            	String key = bankId + "_" + envType;
+                            	System.out.println( socketMap );
+                            	if( !socketMap.containsKey(key) ) {
+                            		socketMap.put(key, socket);
+                            	}else {
+                            		sendMessage( out , bankId + "正在打包中" );
+                            		socket.close();
+                            		break;
+                            	}
+                            	
+                            	buildInfo.put("bankId", bankId);
+                            	buildInfo.put("envType", envType);
+
+                            }else if( type.equals("getVersion") ){
+                            	
+                            	String versionData = fileController.getVersion( envType, bankId );
+                            	currentBankListInfo = new JSONObject( versionData ).getJSONObject("app");
+                            	System.out.println( versionData );
+                                out.write( versionData.getBytes() );
+                                out.flush();
+                            	
+                            }else if( type.equals("fileInfo") ) {
+
+                            	
+                            	ZipFile zipFile = fileController.zipBase64ToFile( (String) reqData.get("fileContent"), bankId + ".zip" );
+                            	
+                            	if( zipFile == null ) {
+                            		sendMessage( out , "失败，zip文件为空" );
+                            		out.close();
+                            		socket.close();
+                            	}
+                                
+                                Map<String,Object> loginData = commonApi.loginManagement( envType );
+                                
+                                try {
+                                	Object errData = new JSONObject( loginData.get("data").toString() ).get("userSession");
+                                	sendMessage( out , "登录后台成功，开始准备上传app" );
+                                }catch( Exception e ) {
+            				    	sendMessage( out , "登录后台失败" );
+            				    	out.close();
+            					  	socket.close();
+                                }
+                              	
+                                Map<String,Object> releaseAppData = commonApi.releaseApp( currentBankListInfo,envType,bankId ,reqData );
+                                
+                                try{
+                                	sendMessage( out , "app发版成功，列表id-" + currentBankListInfo.get("id") );
+                                }catch( Exception e ) {
+                                	sendMessage( out , "app发版成功，新增" );
+                                }
+                                
+                                
+                        			
+                    			sendMessage( out , "开始清理远程文件夹中的打包文件..." );
+                    			if( fileController.clearFile( envType,bankId ) ) {
+                    				sendMessage( out , "远程文件已删除，开始准备上传" );
+                    			}else {
+                    				sendMessage( out , "远程没有此项目打包文件，开始准备上传" );
+                    			}
+                					
+                    			@SuppressWarnings("unchecked")
+                                Enumeration<ZipEntry> enu = (Enumeration<ZipEntry>) zipFile.entries(); 
+                                int fil = 0;
+                                int dir = 0;
+                                
+                                fileController.createDir( envType,bankId );
+                                
+                                while ( enu.hasMoreElements() ) {
+                                	
+                                    ZipEntry zipElement = (ZipEntry) enu.nextElement();  
+                                    InputStream read = zipFile.getInputStream(zipElement);  
+                                    String fileName = zipElement.getName();  
+                                    if (fileName != null && fileName.indexOf(".") != -1) {// 是否为文件 
+                                    	fileController.uploadFile( envType,fileName,read );
+                                    	++fil;
+                                    	sendMessage( out ,Integer.toString(fil) , "upload" );
+                                    }else {
+                                    	fileController.createDir( envType,fileName );
+                                    	++dir;
+                                    }
+                                    BufferedInputStream bf = null;
+                                    bf = new BufferedInputStream( read );
+
+                                }
+                                
+                                sendMessage( out , "H5发版成功" );
+                                out.close();
+                                socket.close();
+                                break;
+                            	
+                            }
+                    		
+                    	}catch ( Exception e ) {
+                    		break;
+                    	}
+                    	
+                    	
+                    }
+                	 
+                } catch (IOException e) {
+                    // TODO Auto-generated catch block
+                    e.printStackTrace();
+//                    if( socket.isConnected() ) {
+//                        sendMessage( out , e.getMessage() );
+//                        out.close();
+//                    }
+                    socket.close();
+                    
                 }
+
+        	}
+               
         
-
-                
-                
-                
-            } catch (IOException e) {
-                // TODO Auto-generated catch block
-                e.printStackTrace();
-                
-            } finally {
-            	
-            	try {
-					socket.close();
-				} catch (IOException e) {
-					// TODO Auto-generated catch block
-//					e.printStackTrace();
-				}
-                
-            }
-
-        }
 
     }
 

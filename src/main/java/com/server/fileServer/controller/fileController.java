@@ -50,13 +50,7 @@ import jcifs.smb.SmbFileOutputStream;
 
 @RestController
 public class fileController {
-	
-	//  有文件但无版本号， 
-	
-	public static String baseUrl = "smb://apph5:apph5@" + switchEnv.sharedFoldersAddress + "/" + switchEnv.sharedFoldersName + "/app-h5-api/banks/";
-	
-	public static JSONObject currentBankListInfo = new JSONObject();
-	
+		
 	//  读取远程文件；
     public static void readToBuffer(StringBuffer buffer, String filePath) throws IOException {
     	SmbFileInputStream smbfile = new SmbFileInputStream( filePath );
@@ -75,58 +69,59 @@ public class fileController {
     //  查询后台银行列表
     private static int bankListPage = 1;
     private static int bankListLimit = 12;
-    public static void appListFind( int bankId,String envType ) throws IOException {
+    public static JSONObject appListFind( int bankId,String envType ) throws Exception {
     	
-    	JSONObject listData = commonApi.getListDat( bankListPage,bankListLimit );
+    	JSONObject listData = commonApi.getListDat( envType,bankListPage,bankListLimit );
         
         if( (int) listData.get("code") == 0 ) {
         	
         	JSONArray bankList = new JSONArray( listData.get("data").toString() );
         	
-        	if( bankList.length() == 0 ) { return; }
+        	if( bankList.length() == 0 ) { return new JSONObject(); }
         	
         	for(int i=0; i<bankList.length(); i++) {
         		JSONObject jsonObj = bankList.getJSONObject(i);
         		String prepareEnvType = (String) jsonObj.get("status");
         		int prepareOrgId = (int) jsonObj.get("orgId");
         		if(  prepareEnvType.equals(envType) && prepareOrgId == bankId ) {
-        			currentBankListInfo = bankList.getJSONObject(i);
-        			break;
+        			return bankList.getJSONObject(i);
         		}
         	}
         	
-        	if( !currentBankListInfo.has("version") ) { ++bankListPage;fileController.appListFind( bankId,envType ); }
+        	++bankListPage;
+        	JSONObject currentData = fileController.appListFind( bankId,envType );
+        	if( !currentData.isEmpty() ) {
+        		return currentData;
+        	}
         	
         }
+        
+        return new JSONObject();
         
     }
     
     //  获取APP版本
-    public static void getAppVersion( int bankId,String envType ) throws IOException {
+    public static JSONObject getAppVersion( int bankId,String envType ) throws Exception {
     	
-    	Map<String,Object> loginData = commonApi.loginManagement();
+    	Map<String,Object> loginData = commonApi.loginManagement(envType);
     	
     	System.out.println( loginData );
         bankListPage = 1;
         bankListLimit = 12;
-        currentBankListInfo = new JSONObject();
-    	fileController.appListFind( bankId,envType );
+    	return fileController.appListFind( bankId,envType );
         
     }
 	
     //  获取版本；
-    @PostMapping(path = "/getVersion")
-	public static String getVersion(@RequestBody Map<String, String> params) throws Exception {
+	public static String getVersion( String envType,String bankIdStr ) throws Exception {
     	
-    	int bankId = Integer.valueOf( params.get("bankId") );
-    	String envType = (String) params.get("envType");
-    	switchEnv.action(envType);
+		Integer bankId = Integer.valueOf( bankIdStr );
     	
-    	
-		String fileUrl = baseUrl + bankId + "/appConfig.json";
+		String fileUrl = switchEnv.getTelefileBaseUrl(envType) + bankId + "/appConfig.json";
 		
 		SmbFile smbfile = new SmbFile( fileUrl );
 		JSONObject resJson = new JSONObject(); 
+		resJson.put( "type", "versionData" );
 		resJson.put( "h5", new JSONObject() );
 		resJson.put( "app", new JSONObject() );
 		if( smbfile.exists() ) {
@@ -137,20 +132,65 @@ public class fileController {
 			
 		}
 		
-		fileController.getAppVersion( bankId,envType );
-		resJson.put( "app", currentBankListInfo  );
+		
+		resJson.put( "app", fileController.getAppVersion( bankId,envType ) );
 
         System.out.println( resJson );
         
         return resJson.toString();
         
     }
+	
+	private static void recursiveFiles( String path ) throws SmbException, MalformedURLException{
+        
+        // 创建 File对象
+		SmbFile smbfile = new SmbFile(path);
+		SmbFile[] smbfiles = smbfile.listFiles();
+        
+        // 对象为空 直接返回
+        if(smbfiles == null){
+            return;
+        }
+                
+        // 目录下文件
+        if(smbfiles.length == 0){
+            System.out.println(path + "该文件夹下没有文件");
+        }
+        
+        // 存在文件 遍历 判断
+        for (SmbFile f : smbfiles) {
+            
+            // 判断是否为 文件夹
+            if( f.isDirectory() ){
+                
+                System.out.print("文件夹: "); 
+                System.out.println(f.getPath());  
+                
+                // 为 文件夹继续遍历
+//                recursiveFiles(f.getPath());
+                f.delete();
+                
+            
+            // 判断是否为 文件
+            } else if(f.isFile()){
+                
+                System.out.print("文件: "); 
+                System.out.println(f.getPath());  
+                f.delete();
+                
+            } else {
+                System.out.print("未知错误文件"); 
+            }
+            
+        }
+        
+    }
     
-	public static boolean clearFile( Object fileName ) throws Exception {
+	public static boolean clearFile( String envType,Object fileName ) throws Exception {
     	
 		boolean result;
-		String deleteUrl = baseUrl + fileName + '/';
-		SmbFile smbfile = new SmbFile( deleteUrl );
+		String deleteUrl = switchEnv.getTelefileBaseUrl(envType) + fileName + '/';
+		SmbFile smbfile = new SmbFile( deleteUrl ); 
 		
 	    if(smbfile.exists()){
 	    	smbfile.delete();
@@ -163,10 +203,10 @@ public class fileController {
         
     }
 	
-    public static void createDir(Object wrapperDirName) {
+    public static void createDir( String envType,Object wrapperDirName) throws Exception {
 	    SmbFile smbFile;
 	    try {
-	        smbFile = new SmbFile(baseUrl + wrapperDirName);
+	        smbFile = new SmbFile( switchEnv.getTelefileBaseUrl(envType)  + wrapperDirName);
 	        if (!smbFile.exists()) {
 	            smbFile.mkdir();
 	        }
@@ -177,107 +217,11 @@ public class fileController {
 	    }
     }
     
-    @PostMapping(path = "/uploadFile")
-    @ResponseBody
-    public String handleFileUpload( @RequestParam("file") MultipartFile inFile ) throws Exception {
-    	
-    	String wrapperDirName;
-        if (!inFile.isEmpty()) {
-        	
-	        String content = inFile.getOriginalFilename();
-	        String pattern = ".*.zip$";
-	        if( !Pattern.matches(pattern, content) ) { return "文件必须是zpi哦"; }
-	        wrapperDirName = content.split("\\.")[0];
-        	
-            InputStream fileStream = null;
-            File file = null;
-            Stream<? extends ZipEntry> signStream = null;
-            Stream<? extends ZipEntry> zipStream = null;
-            ZipFile zipFile = null;
-            
-            //临时文件
-            Path path = Paths.get(System.getProperty("java.io.tmpdir"), wrapperDirName + UUID.randomUUID() + ".zip");
-            file = path.toFile();
-            try {
-                fileStream = inFile.getInputStream();
-                org.apache.commons.io.FileUtils.copyInputStreamToFile(fileStream, file);
-                System.out.println( inFile.getOriginalFilename() );
-                System.out.println( Charset.defaultCharset() );
-                zipFile = new ZipFile(file, Charset.defaultCharset());
-                signStream = zipFile.stream();
-                zipStream = zipFile.stream();
-                
-//                //断言
-//                Predicate<ZipEntry> signTxt = ze -> ze.getName().contains("sign,txt");
-//                Predicate<ZipEntry> zipTxt = ze -> ze.getName().endsWith(".zip");
-//                //，过滤
-//                Optional<ZipEntry> signInfo = (Optional<ZipEntry>) signStream.filter(signTxt).findFirst();
-//                Optional<ZipEntry> zipInfo = (Optional<ZipEntry>) zipStream.filter(zipTxt).findFirst();
-//                if (signInfo.isPresent() && zipInfo.isPresent()) {
-//                    System.out.println("hello");
-//                }
-                
-                @SuppressWarnings("unchecked")
-                Enumeration<ZipEntry> enu = (Enumeration<ZipEntry>) zipFile.entries(); 
-                int fil = 0;
-                int dir = 0;
-                
-                createDir( wrapperDirName );
-                
-                while ( enu.hasMoreElements() ) {  
-                    ZipEntry zipElement = (ZipEntry) enu.nextElement();  
-                    InputStream read = zipFile.getInputStream(zipElement);  
-                    String fileName = zipElement.getName();  
-                    if (fileName != null && fileName.indexOf(".") != -1) {// 是否为文件 
-                    	uploadFile( fileName,read );
-                    	++fil;
-                    }else {
-                    	createDir( fileName );
-                    	++dir;
-                    }
-                    BufferedInputStream bf = null;
-                    bf = new BufferedInputStream( read ); 
-
-                }
-                
-                System.out.println( fil );
-                System.out.println( dir );
-     
-            } catch (IOException e) {
-                e.printStackTrace();
-            } finally {
-                try {
-                    //关闭流
-     
-                    fileStream.close();
-                    signStream.close();
-                    zipStream.close();
-                    zipFile.close();
-                    //删除临时文件
-     
-                    org.apache.commons.io.FileUtils.deleteQuietly(file);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-     
-            }
-
-        	
-        } else {
-            return "文件为空";    
-        }
-        
-        return "success";
-        
-        
-    }
-    
-    /**上传文件到服务器*/
-    public static void uploadFile(String name,InputStream read){
+    public static void uploadFile(String envType,String name,InputStream read){
         BufferedInputStream bf = null; 
         SmbFileOutputStream smbOut = null;
         try{
-            smbOut = new SmbFileOutputStream(baseUrl + "/" + name, false); 
+            smbOut = new SmbFileOutputStream( switchEnv.getTelefileBaseUrl(envType) + "/" + name, false ); 
             bf = new BufferedInputStream( read ); 
             byte[] bt = new byte[8192]; 
             int n = bf.read(bt); 
